@@ -20,9 +20,14 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
+  socket.on('join-room', (roomName) => {
+    socket.join(roomName);
+    console.log(`Socket ${socket.id} joined room: ${roomName}`);
+  });
+
   socket.on('send-message', (data) => {
     console.log('Message received:', data);
-    io.emit('receive-message', data);
+    io.to(data.room).emit('receive-message', data.message);
   });
 
   socket.on('disconnect', () => {
