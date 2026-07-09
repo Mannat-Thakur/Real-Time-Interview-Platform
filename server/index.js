@@ -30,6 +30,10 @@ io.on('connection', (socket) => {
     io.to(data.room).emit('receive-message', data.message);
   });
 
+  socket.on('send-code-change', (data) => {
+  io.to(data.room).emit('receive-code-change', data.code);
+});
+
   socket.on('disconnect', () => {
     console.log('A user disconnected:', socket.id);
   });
