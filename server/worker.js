@@ -26,7 +26,7 @@ function runCodeInDocker(code) {
 
     // Step 2: Build the docker command
     const dockerCommand = `docker run --rm --network none --memory=100m --cpus=0.5 -v "${filePath}:/app/code.js" node:20-alpine node /app/code.js`;
-
+    
     // Step 3: Run it, with a hard timeout
     exec(dockerCommand, { timeout: 5000 }, (error, stdout, stderr) => {
       // Step 4: Clean up the temp file no matter what happens

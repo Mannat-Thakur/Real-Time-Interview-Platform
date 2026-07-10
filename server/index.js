@@ -1,6 +1,10 @@
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { QueueEvents } = require('bullmq');
+const codeExecutionQueue = require('./queue');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,11 +16,29 @@ const io = new Server(server, {
   }
 });
 
+// Redis connection config, used for QueueEvents below
+const connection = {
+  host: process.env.REDIS_HOST,
+  port: process.env.REDIS_PORT,
+  password: process.env.REDIS_PASSWORD,
+  tls: {},
+};
+
+// Listen for job completions from the worker, via Redis
+const queueEvents = new QueueEvents('code-execution', { connection });
+
+queueEvents.on('completed', async ({ jobId, returnvalue }) => {
+  const job = await codeExecutionQueue.getJob(jobId);
+  const room = job.data.room;
+
+  console.log(`Job ${jobId} completed, sending result to room ${room}`);
+  io.to(room).emit('code-result', returnvalue);
+});
+
 app.get('/', (req, res) => {
   res.send('Server is running');
 });
 
-// This is the core of Socket.io: listen for new connections
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
@@ -26,13 +48,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send-message', (data) => {
-    console.log('Message received:', data);
     io.to(data.room).emit('receive-message', data.message);
   });
 
   socket.on('send-code-change', (data) => {
-  io.to(data.room).emit('receive-code-change', data.code);
-});
+    io.to(data.room).emit('receive-code-change', data.code);
+  });
+
+  socket.on('run-code', async (data) => {
+    console.log('Run code requested for room:', data.room);
+    const job = await codeExecutionQueue.add('run-code', {
+      code: data.code,
+      room: data.room,
+    });
+    console.log('Job added:', job.id);
+  });
 
   socket.on('disconnect', () => {
     console.log('A user disconnected:', socket.id);
