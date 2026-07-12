@@ -15,6 +15,10 @@ const sessionSchema = new mongoose.Schema({
     type: String,
     default: 'Untitled Interview Session',
   },
+  code: {
+    type: String,
+    default: '// Start typing code here',
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Session', sessionSchema);

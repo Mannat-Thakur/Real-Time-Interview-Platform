@@ -11,6 +11,7 @@ const jwt = require('jsonwebtoken');
 const codeExecutionQueue = require('./queue');
 const authRoutes = require('./routes/auth');
 const sessionRoutes = require('./routes/sessions');
+const Session = require('./models/Session');
 
 const app = express();
 const server = http.createServer(app);
@@ -67,12 +68,24 @@ queueEvents.on('completed', async ({ jobId, returnvalue }) => {
   io.to(room).emit('code-result', returnvalue);
 });
 
+// Tracks pending debounced database saves, keyed by room — shared across all connections
+const saveTimers = {};
+
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
-  socket.on('join-room', (roomName) => {
+  socket.on('join-room', async (roomName) => {
     socket.join(roomName);
     console.log(`Socket ${socket.id} joined room: ${roomName}`);
+
+    try {
+      const session = await Session.findOne({ roomId: roomName });
+      if (session) {
+        socket.emit('load-code', session.code);
+      }
+    } catch (err) {
+      console.error('Failed to load session code:', err);
+    }
   });
 
   socket.on('send-message', (data) => {
@@ -81,6 +94,23 @@ io.on('connection', (socket) => {
 
   socket.on('send-code-change', (data) => {
     io.to(data.room).emit('receive-code-change', data.code);
+
+    // Debounced database save — separate from the broadcast above
+    if (saveTimers[data.room]) {
+      clearTimeout(saveTimers[data.room]);
+    }
+
+    saveTimers[data.room] = setTimeout(async () => {
+      try {
+        await Session.findOneAndUpdate(
+          { roomId: data.room },
+          { code: data.code }
+        );
+        console.log(`Saved code for room ${data.room}`);
+      } catch (err) {
+        console.error('Failed to save code:', err);
+      }
+    }, 5000);
   });
 
   socket.on('run-code', async (data) => {
