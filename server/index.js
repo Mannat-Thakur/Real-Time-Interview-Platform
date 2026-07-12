@@ -1,10 +1,13 @@
 require('dotenv').config();
+const connectDB = require('./db');
+connectDB();
 
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { QueueEvents } = require('bullmq');
 const codeExecutionQueue = require('./queue');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -38,6 +41,9 @@ queueEvents.on('completed', async ({ jobId, returnvalue }) => {
 app.get('/', (req, res) => {
   res.send('Server is running');
 });
+
+ app.use(express.json());
+app.use('/api/auth', authRoutes);
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
