@@ -1,59 +1,28 @@
-import { useEffect, useState, useRef } from 'react';
-import { io } from 'socket.io-client';
-import Editor from '@monaco-editor/react';
-
-const socket = io('http://localhost:3000');
-
-const params = new URLSearchParams(window.location.search);
-const ROOM_NAME = params.get('room') || 'default-room';
+import { useState } from 'react';
+import Login from './Login';
+import Lobby from './Lobby';
+import Editor from './Editor';
 
 function App() {
-  const [code, setCode] = useState('// Start typing code here');
-  const debounceTimer = useRef(null);
-  const isRemoteChange = useRef(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
+  const [currentRoom, setCurrentRoom] = useState(null);
 
-  useEffect(() => {
-    socket.emit('join-room', ROOM_NAME);
+  if (!isLoggedIn) {
+    return <Login onLoginSuccess={() => setIsLoggedIn(true)} />;
+  }
 
-    socket.on('receive-code-change', (newCode) => {
-      isRemoteChange.current = true; // mark this so our onChange doesn't re-broadcast it
-      setCode(newCode);
-    });
-
-    return () => {
-      socket.off('receive-code-change');
-    };
-  }, []);
-
-  const handleEditorChange = (value) => {
-    setCode(value);
-
-    // If this change came from the server (another user), don't re-broadcast it
-    if (isRemoteChange.current) {
-      isRemoteChange.current = false;
-      return;
-    }
-
-    // Debounce: clear any pending timer, start a new one
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current);
-    }
-
-    debounceTimer.current = setTimeout(() => {
-      socket.emit('send-code-change', { room: ROOM_NAME, code: value });
-    }, 300);
-  };
+  if (!currentRoom) {
+    return <Lobby onEnterRoom={(roomId) => setCurrentRoom(roomId)} />;
+  }
 
   return (
-    <div style={{ height: '100vh' }}>
-      <Editor
-        height="100%"
-        defaultLanguage="javascript"
-        value={code}
-        onChange={handleEditorChange}
-        theme="vs-dark"
-      />
-    </div>
+    <Editor
+      roomId={currentRoom}
+      onLogout={() => {
+        setIsLoggedIn(false);
+        setCurrentRoom(null);
+      }}
+    />
   );
 }
 

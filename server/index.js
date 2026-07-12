@@ -6,28 +6,32 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { QueueEvents } = require('bullmq');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const codeExecutionQueue = require('./queue');
 const authRoutes = require('./routes/auth');
+const sessionRoutes = require('./routes/sessions');
 
 const app = express();
 const server = http.createServer(app);
-const cors = require('cors');
-const sessionRoutes = require('./routes/sessions');
-app.use('/api/sessions', sessionRoutes);
 
-// ... after creating `app`
-
+// Core middleware — must come before any routes that need them
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.get('/', (req, res) => {
+  res.send('Server is running');
+});
+app.use('/api/auth', authRoutes);
+app.use('/api/sessions', sessionRoutes);
 
 // Attach Socket.io to our existing HTTP server
 const io = new Server(server, {
   cors: {
-    origin: "*" // we'll lock this down later, wide open for now just to test
+    origin: "*"
   }
 });
-
-const jwt = require('jsonwebtoken');
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
@@ -38,8 +42,8 @@ io.use((socket, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    socket.userId = decoded.userId; // attach user info to this socket for later use
-    next(); // allow the connection to proceed
+    socket.userId = decoded.userId;
+    next();
   } catch (err) {
     next(new Error('Authentication error: invalid token'));
   }
@@ -53,7 +57,6 @@ const connection = {
   tls: {},
 };
 
-// Listen for job completions from the worker, via Redis
 const queueEvents = new QueueEvents('code-execution', { connection });
 
 queueEvents.on('completed', async ({ jobId, returnvalue }) => {
@@ -63,13 +66,6 @@ queueEvents.on('completed', async ({ jobId, returnvalue }) => {
   console.log(`Job ${jobId} completed, sending result to room ${room}`);
   io.to(room).emit('code-result', returnvalue);
 });
-
-app.get('/', (req, res) => {
-  res.send('Server is running');
-});
-
- app.use(express.json());
-app.use('/api/auth', authRoutes);
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
