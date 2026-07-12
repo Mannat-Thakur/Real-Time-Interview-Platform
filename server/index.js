@@ -11,11 +11,35 @@ const authRoutes = require('./routes/auth');
 
 const app = express();
 const server = http.createServer(app);
+const cors = require('cors');
+
+// ... after creating `app`
+
+app.use(cors());
+app.use(express.json());
 
 // Attach Socket.io to our existing HTTP server
 const io = new Server(server, {
   cors: {
     origin: "*" // we'll lock this down later, wide open for now just to test
+  }
+});
+
+const jwt = require('jsonwebtoken');
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+
+  if (!token) {
+    return next(new Error('Authentication error: no token provided'));
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded.userId; // attach user info to this socket for later use
+    next(); // allow the connection to proceed
+  } catch (err) {
+    next(new Error('Authentication error: invalid token'));
   }
 });
 
