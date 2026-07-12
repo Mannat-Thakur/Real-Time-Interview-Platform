@@ -12,6 +12,8 @@ const authRoutes = require('./routes/auth');
 const app = express();
 const server = http.createServer(app);
 const cors = require('cors');
+const sessionRoutes = require('./routes/sessions');
+app.use('/api/sessions', sessionRoutes);
 
 // ... after creating `app`
 
