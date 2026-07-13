@@ -113,14 +113,15 @@ io.on('connection', (socket) => {
     }, 5000);
   });
 
-  socket.on('run-code', async (data) => {
-    console.log('Run code requested for room:', data.room);
-    const job = await codeExecutionQueue.add('run-code', {
-      code: data.code,
-      room: data.room,
-    });
-    console.log('Job added:', job.id);
+socket.on('run-code', async (data) => {
+  console.log('Run code requested for room:', data.room);
+  const job = await codeExecutionQueue.add('run-code', {
+    code: data.code,
+    room: data.room,
+    language: data.language,
   });
+  console.log('Job added:', job.id);
+});
 
   socket.on('disconnect', () => {
     console.log('A user disconnected:', socket.id);

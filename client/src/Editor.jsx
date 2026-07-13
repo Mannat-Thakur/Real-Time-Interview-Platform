@@ -2,8 +2,14 @@ import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import MonacoEditor from '@monaco-editor/react';
 
+const LANGUAGE_DEFAULTS = {
+  javascript: '// Start typing code here',
+  python: '# Start typing code here',
+};
+
 function Editor({ roomId, onLogout }) {
-  const [code, setCode] = useState('// Start typing code here');
+  const [code, setCode] = useState(LANGUAGE_DEFAULTS.javascript);
+  const [language, setLanguage] = useState('javascript');
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -34,6 +40,11 @@ function Editor({ roomId, onLogout }) {
       setCode(newCode);
     });
 
+    socket.on('load-code', (savedCode) => {
+      isRemoteChange.current = true;
+      setCode(savedCode);
+    });
+
     socket.on('code-result', (result) => {
       setIsRunning(false);
       setOutput(result.success ? result.output : `Error: ${result.output}`);
@@ -61,10 +72,15 @@ function Editor({ roomId, onLogout }) {
     }, 300);
   };
 
+  const handleLanguageChange = (newLanguage) => {
+    setLanguage(newLanguage);
+    setCode(LANGUAGE_DEFAULTS[newLanguage]);
+  };
+
   const runCode = () => {
     setIsRunning(true);
     setOutput('Running...');
-    socketRef.current.emit('run-code', { room: roomId, code });
+    socketRef.current.emit('run-code', { room: roomId, code, language });
   };
 
   const handleLogout = () => {
@@ -105,6 +121,15 @@ function Editor({ roomId, onLogout }) {
           )}
         </button>
 
+        <select
+          value={language}
+          onChange={(e) => handleLanguageChange(e.target.value)}
+          className="bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-neutral-300 text-sm rounded-lg px-3 py-2 outline-none cursor-pointer"
+        >
+          <option value="javascript">JavaScript</option>
+          <option value="python">Python</option>
+        </select>
+
         <button
           onClick={copyRoomId}
           className="flex items-center gap-2 bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 transition-colors text-neutral-300 text-sm rounded-lg px-3 py-2"
@@ -125,7 +150,7 @@ function Editor({ roomId, onLogout }) {
       <div className="flex-1 min-h-0">
         <MonacoEditor
           height="100%"
-          defaultLanguage="javascript"
+          language={language}
           value={code}
           onChange={handleEditorChange}
           theme="vs-dark"
