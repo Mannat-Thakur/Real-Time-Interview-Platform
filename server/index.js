@@ -137,6 +137,14 @@ io.on('connection', (socket) => {
     console.log('Job added:', job.id);
   });
 
+  socket.on('cursor-move', (data) => {
+  socket.to(data.room).emit('receive-cursor', {
+    userId: socket.id,
+    userName: socket.userName,
+    position: data.position,
+  });
+});
+
   socket.on('disconnect', () => {
     console.log('A user disconnected:', socket.id);
 
