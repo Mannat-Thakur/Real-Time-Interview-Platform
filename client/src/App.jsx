@@ -17,7 +17,9 @@ function App() {
 
   return (
     <Editor
+      key={currentRoom}
       roomId={currentRoom}
+      onLeaveRoom={() => setCurrentRoom(null)}
       onLogout={() => {
         setIsLoggedIn(false);
         setCurrentRoom(null);

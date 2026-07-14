@@ -24,8 +24,8 @@ const LANGUAGE_CONFIG = {
   },
 };
 
-function runCodeInDocker(code, language) {
-  return new Promise((resolve, reject) => {
+function runCodeInDocker(code, language, input = '') {
+  return new Promise((resolve) => {
     const config = LANGUAGE_CONFIG[language];
 
     if (!config) {
@@ -33,7 +33,7 @@ function runCodeInDocker(code, language) {
       return;
     }
 
-    const fileName = `temp-${Date.now()}.${config.extension}`;
+    const fileName = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}.${config.extension}`;
     const filePath = path.join(__dirname, 'temp', fileName);
 
     if (!fs.existsSync(path.join(__dirname, 'temp'))) {
@@ -45,22 +45,29 @@ function runCodeInDocker(code, language) {
     const containerFileName = `code.${config.extension}`;
     const runCommand = config.command(containerFileName);
 
-    const dockerCommand = `docker run --rm --network none --memory=100m --cpus=0.5 -v "${filePath}:/app/${containerFileName}" -w /app ${config.image} ${runCommand}`;
+    const dockerCommand = `docker run --rm -i --network none --memory=100m --cpus=0.5 -v "${filePath}:/app/${containerFileName}" -w /app ${config.image} ${runCommand}`;
 
-    exec(dockerCommand, { timeout: 5000 }, (error, stdout, stderr) => {
-      fs.unlinkSync(filePath);
+    const child = exec(
+      dockerCommand,
+      { timeout: 5000, maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        fs.unlinkSync(filePath);
 
-      if (error) {
-        if (error.killed) {
-          resolve({ success: false, output: 'Execution timed out (5 second limit)' });
-        } else {
-          resolve({ success: false, output: stderr || error.message });
+        if (error) {
+          if (error.killed) {
+            resolve({ success: false, output: 'Execution timed out (5 second limit)' });
+          } else {
+            resolve({ success: false, output: stderr || error.message });
+          }
+          return;
         }
-        return;
-      }
 
-      resolve({ success: true, output: stdout });
-    });
+        resolve({ success: true, output: stdout });
+      }
+    );
+
+    child.stdin.write(input);
+    child.stdin.end();
   });
 }
 
@@ -68,12 +75,33 @@ const worker = new Worker(
   'code-execution',
   async (job) => {
     console.log('Worker picked up job:', job.id);
-    const { code, language } = job.data;
+    const { code, language, testCases } = job.data;
 
-    const result = await runCodeInDocker(code, language || 'javascript');
+    if (!testCases || testCases.length === 0) {
+      const result = await runCodeInDocker(code, language || 'javascript');
+      return { mode: 'raw', ...result };
+    }
 
-    console.log('Execution result:', result);
-    return result;
+    const results = [];
+    for (const tc of testCases) {
+      const result = await runCodeInDocker(code, language || 'javascript', tc.input);
+      const actual = (result.output || '').trim();
+      const expected = tc.expectedOutput.trim();
+      results.push({
+  passed: result.success && actual === expected,
+  input: tc.input,
+  expectedOutput: expected,
+  actualOutput: result.success ? actual : result.output,
+  isHidden: tc.isHidden,
+});
+    }
+
+    return {
+      mode: 'testcases',
+      results,
+      passedCount: results.filter((r) => r.passed).length,
+      totalCount: results.length,
+    };
   },
   { connection }
 );
