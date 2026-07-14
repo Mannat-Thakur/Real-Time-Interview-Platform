@@ -13,6 +13,10 @@ function Editor({ roomId, onLogout }) {
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [showChat, setShowChat] = useState(false);
   const debounceTimer = useRef(null);
   const isRemoteChange = useRef(false);
   const socketRef = useRef(null);
@@ -50,6 +54,14 @@ function Editor({ roomId, onLogout }) {
       setOutput(result.success ? result.output : `Error: ${result.output}`);
     });
 
+    socket.on('room-users', (userList) => {
+      setUsers(userList);
+    });
+
+    socket.on('receive-message', (msg) => {
+      setMessages((prev) => [...prev, msg]);
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -81,6 +93,12 @@ function Editor({ roomId, onLogout }) {
     setIsRunning(true);
     setOutput('Running...');
     socketRef.current.emit('run-code', { room: roomId, code, language });
+  };
+
+  const sendMessage = () => {
+    if (!chatInput.trim()) return;
+    socketRef.current.emit('send-message', { room: roomId, message: chatInput });
+    setChatInput('');
   };
 
   const handleLogout = () => {
@@ -139,29 +157,92 @@ function Editor({ roomId, onLogout }) {
         </button>
 
         <button
+          onClick={() => setShowChat(!showChat)}
+          className="flex items-center gap-2 bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 transition-colors text-neutral-300 text-sm rounded-lg px-3 py-2"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.17 0-2.29-.2-3.32-.56L3 21l1.6-4.8C3.6 14.94 3 13.52 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          Chat {messages.length > 0 && `(${messages.length})`}
+        </button>
+
+        <div className="flex items-center gap-2 ml-auto mr-2">
+          {users.map((name, i) => (
+            <div
+              key={i}
+              title={name}
+              className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-semibold border-2 border-neutral-900"
+              style={{ marginLeft: i > 0 ? '-8px' : '0' }}
+            >
+              {name.charAt(0).toUpperCase()}
+            </div>
+          ))}
+        </div>
+
+        <button
           onClick={handleLogout}
-          className="ml-auto text-neutral-500 hover:text-neutral-300 text-sm transition-colors"
+          className="text-neutral-500 hover:text-neutral-300 text-sm transition-colors"
         >
           Log Out
         </button>
       </div>
 
-      {/* Editor */}
-      <div className="flex-1 min-h-0">
-        <MonacoEditor
-          height="100%"
-          language={language}
-          value={code}
-          onChange={handleEditorChange}
-          theme="vs-dark"
-          options={{ fontSize: 14, padding: { top: 16 }, fontFamily: "'Fira Code', monospace" }}
-        />
-      </div>
+      {/* Main content: editor + optional chat panel */}
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-1 min-h-0">
+            <MonacoEditor
+              height="100%"
+              language={language}
+              value={code}
+              onChange={handleEditorChange}
+              theme="vs-dark"
+              options={{ fontSize: 14, padding: { top: 16 }, fontFamily: "'Fira Code', monospace" }}
+            />
+          </div>
 
-      {/* Output console */}
-      <div className="h-40 bg-black/60 backdrop-blur-xl border-t border-neutral-800/80 px-5 py-3 overflow-auto">
-        <p className="text-neutral-600 text-xs uppercase tracking-wider font-medium mb-2">Output</p>
-        <pre className="text-green-400 text-sm font-mono whitespace-pre-wrap">{output || 'Run your code to see output here...'}</pre>
+          {/* Output console */}
+          <div className="h-40 bg-black/60 backdrop-blur-xl border-t border-neutral-800/80 px-5 py-3 overflow-auto">
+            <p className="text-neutral-600 text-xs uppercase tracking-wider font-medium mb-2">Output</p>
+            <pre className="text-green-400 text-sm font-mono whitespace-pre-wrap">{output || 'Run your code to see output here...'}</pre>
+          </div>
+        </div>
+
+        {showChat && (
+          <div className="w-72 bg-neutral-900 border-l border-neutral-800 flex flex-col">
+            <div className="px-4 py-3 border-b border-neutral-800">
+              <p className="text-neutral-300 text-sm font-medium">Chat</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+              {messages.length === 0 && (
+                <p className="text-neutral-600 text-sm text-center mt-4">No messages yet</p>
+              )}
+              {messages.map((msg, i) => (
+                <div key={i}>
+                  <p className="text-blue-400 text-xs font-medium">{msg.user}</p>
+                  <p className="text-neutral-300 text-sm">{msg.message}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 border-t border-neutral-800 flex gap-2">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                placeholder="Type a message..."
+                className="flex-1 bg-neutral-800/60 text-white placeholder-neutral-600 text-sm rounded-lg px-3 py-2 outline-none border border-transparent focus:border-blue-500/50"
+              />
+              <button
+                onClick={sendMessage}
+                className="bg-blue-600 hover:bg-blue-500 transition-colors text-white text-sm rounded-lg px-3"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

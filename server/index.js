@@ -12,29 +12,27 @@ const codeExecutionQueue = require('./queue');
 const authRoutes = require('./routes/auth');
 const sessionRoutes = require('./routes/sessions');
 const Session = require('./models/Session');
+const User = require('./models/User');
 
 const app = express();
 const server = http.createServer(app);
 
-// Core middleware — must come before any routes that need them
 app.use(cors());
 app.use(express.json());
 
-// Routes
 app.get('/', (req, res) => {
   res.send('Server is running');
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/sessions', sessionRoutes);
 
-// Attach Socket.io to our existing HTTP server
 const io = new Server(server, {
   cors: {
     origin: "*"
   }
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
 
   if (!token) {
@@ -43,14 +41,20 @@ io.use((socket, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return next(new Error('Authentication error: user not found'));
+    }
+
     socket.userId = decoded.userId;
+    socket.userName = user.name;
     next();
   } catch (err) {
     next(new Error('Authentication error: invalid token'));
   }
 });
 
-// Redis connection config, used for QueueEvents below
 const connection = {
   host: process.env.REDIS_HOST,
   port: process.env.REDIS_PORT,
@@ -68,15 +72,23 @@ queueEvents.on('completed', async ({ jobId, returnvalue }) => {
   io.to(room).emit('code-result', returnvalue);
 });
 
-// Tracks pending debounced database saves, keyed by room — shared across all connections
 const saveTimers = {};
+const roomUsers = {};
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
   socket.on('join-room', async (roomName) => {
     socket.join(roomName);
+    socket.currentRoom = roomName;
     console.log(`Socket ${socket.id} joined room: ${roomName}`);
+
+    if (!roomUsers[roomName]) {
+      roomUsers[roomName] = {};
+    }
+    roomUsers[roomName][socket.id] = socket.userName;
+
+    io.to(roomName).emit('room-users', Object.values(roomUsers[roomName]));
 
     try {
       const session = await Session.findOne({ roomId: roomName });
@@ -89,13 +101,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send-message', (data) => {
-    io.to(data.room).emit('receive-message', data.message);
+    io.to(data.room).emit('receive-message', {
+      user: socket.userName,
+      message: data.message,
+    });
   });
 
   socket.on('send-code-change', (data) => {
     io.to(data.room).emit('receive-code-change', data.code);
 
-    // Debounced database save — separate from the broadcast above
     if (saveTimers[data.room]) {
       clearTimeout(saveTimers[data.room]);
     }
@@ -113,18 +127,23 @@ io.on('connection', (socket) => {
     }, 5000);
   });
 
-socket.on('run-code', async (data) => {
-  console.log('Run code requested for room:', data.room);
-  const job = await codeExecutionQueue.add('run-code', {
-    code: data.code,
-    room: data.room,
-    language: data.language,
+  socket.on('run-code', async (data) => {
+    console.log('Run code requested for room:', data.room);
+    const job = await codeExecutionQueue.add('run-code', {
+      code: data.code,
+      room: data.room,
+      language: data.language,
+    });
+    console.log('Job added:', job.id);
   });
-  console.log('Job added:', job.id);
-});
 
   socket.on('disconnect', () => {
     console.log('A user disconnected:', socket.id);
+
+    if (socket.currentRoom && roomUsers[socket.currentRoom]) {
+      delete roomUsers[socket.currentRoom][socket.id];
+      io.to(socket.currentRoom).emit('room-users', Object.values(roomUsers[socket.currentRoom]));
+    }
   });
 });
 
