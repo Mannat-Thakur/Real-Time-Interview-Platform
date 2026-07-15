@@ -16,7 +16,7 @@ const Session = require("./models/Session");
 const User = require("./models/User");
 const {
   sanitizeProblemForRole,
-  sanitizeResultforRole,
+  sanitizeResultForRole,
 } = require("./utils/sanitize");
 
 const app = express();
@@ -70,14 +70,18 @@ const connection = {
 const queueEvents = new QueueEvents("code-execution", { connection });
 
 queueEvents.on("completed", async ({ jobId, returnvalue }) => {
-  const job = await codeExecutionQueue.getJob(jobId);
-  const room = job.data.room;
+  try {
+    const job = await codeExecutionQueue.getJob(jobId);
+    const room = job.data.room;
 
-  console.log(`Job ${jobId} completed, sending result to room ${room}`);
+    console.log(`Job ${jobId} completed, sending result to room ${room}`);
 
-  const socketsInRoom = await io.in(room).fetchSockets();
-  for (const s of socketsInRoom) {
-    s.emit("code-result", sanitizeResultForRole(returnvalue, s.role));
+    const socketsInRoom = await io.in(room).fetchSockets();
+    for (const s of socketsInRoom) {
+      s.emit("code-result", sanitizeResultForRole(returnvalue, s.role));
+    }
+  } catch (err) {
+    console.error("Failed to handle completed job:", err);
   }
 });
 
