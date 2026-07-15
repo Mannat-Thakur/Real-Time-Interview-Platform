@@ -106,6 +106,8 @@ const worker = new Worker(
   { connection }
 );
 
+console.log('🔧 BullMQ worker is listening for jobs on the code-execution queue');
+
 worker.on('completed', (job) => {
   console.log(`✅ Job ${job.id} completed`);
 });
