@@ -35,7 +35,7 @@ function Editor({ roomId, onLogout, onLeaveRoom }) {
   useEffect(() => { languageRef.current = language; }, [language]);
 
   useEffect(() => {
-    const socket = io("http://localhost:3000", {
+    const socket = io(import.meta.env.VITE_API_BASE_URL, {
       auth: {
         token: localStorage.getItem("token"),
       },

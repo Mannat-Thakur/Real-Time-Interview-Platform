@@ -18,7 +18,7 @@ function Lobby({ onEnterRoom }) {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/sessions/mine', {
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/sessions/mine`, {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         });
         const data = await res.json();
@@ -61,7 +61,7 @@ function Lobby({ onEnterRoom }) {
 
     setCreating(true);
     try {
-      const res = await fetch('http://localhost:3000/api/sessions/create', {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/sessions/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
