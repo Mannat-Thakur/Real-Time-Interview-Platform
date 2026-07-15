@@ -1,4 +1,5 @@
 require("dotenv").config();
+require('./worker'); 
 const connectDB = require("./db");
 connectDB();
 
